@@ -58,12 +58,12 @@ Implementation: [diagnostics](../../../user-mode/console/cpuid.c),
 
 ## Recorded example
 
-These captures are from the physical Windows 11 session, not a VMware guest.
+These captures show the physical Windows 11 test session.
 See the [session manifest](../../../assets/capture-manifest.md) for environment and reproduction details.
 
 ### Per-CPU diagnostics
 
-The final viewport reports 20/20 processors passed. This validates the displayed checks, not every hypervisor behavior.
+All 20 processors passed the startup diagnostic checks.
 
 ![Per-CPU diagnostics](../../../assets/screenshots/01b-diagnostics.png)
 
