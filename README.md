@@ -37,16 +37,7 @@ available exports and shared entry addresses on the running kernel. See the
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    A[Console] -->|Versioned IOCTL settings| B[Kernel control and lifecycle]
-    B --> C[Per-CPU VMCS and EPT]
-    C --> D[Entry trap and VM-exit handling]
-    D --> E[Guest capture and policy]
-    E --> F[Bounded event queues]
-    F --> G[PASSIVE drain and formatting]
-    G --> A
-```
+![Velum control, interception and telemetry architecture](assets/diagrams/architecture.svg)
 
 Root handlers manage VMCS and EPT transitions. Eligible guest helpers capture arguments
 and evaluate policies in Windows context. Formatting runs later in the drain worker.
@@ -101,6 +92,11 @@ composite pairs the monitor output with the application's result.
 ![Live ExAllocatePool2 entry telemetry alongside DebugView](assets/screenshots/10-pool-entry-live-telemetry.png)
 
 ## Build and run
+
+[Download v0.1.0 for Windows x64 (ZIP)](https://github.com/Dovughs/velum-vmm/releases/download/v0.1.0/velum-v0.1.0-windows-x64.zip) | [Release notes and SHA-256 checksums](https://github.com/Dovughs/velum-vmm/releases/tag/v0.1.0)
+
+The ZIP contains `velum.sys` and `velum-console.exe`. Follow the setup guide below
+before loading the driver, or build from source:
 
 Install Visual Studio **2022 or 2026** with C++ x64 tools, plus a matching Windows SDK
 and WDK. [`build.bat`](build.bat) discovers the installed tools; `VS_PATH`, `WDK_ROOT`
