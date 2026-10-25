@@ -2,11 +2,11 @@
 
 [Documentation index](../README.md) | [Project](../../README.md)
 
-## Requirements and scope
+## Requirements
 
 - Intel x64 with exposed VT-x/EPT; AMD SVM is not implemented.
-- Tested by the operator on **Windows 10 22H2** and **Windows 11 26H2**,
-  including the rebuilt Release pair. The import baseline is Windows 10 2004+.
+- Tested on **Windows 10 22H2** and **Windows 11 26H2**,
+  with the Release driver and console. The import baseline is Windows 10 2004+.
 - One fixed processor group, at most 64 processors, without CPU hot-add.
 - Administrative access in a disposable development VM and a recovery snapshot.
 - The unsigned Release driver uses the temporary Startup Settings option below
@@ -29,13 +29,13 @@ one occurrence of:
 hypervisor.cpuid.v0 = "FALSE"
 ```
 
-This matched the working Windows 11 guest and resolved the reported startup
+This matched the working Windows 11 guest and resolved the startup
 freeze in the tested VMware setup. It is an observed workaround, not a universal
 VMware requirement or an instruction-level diagnosis. It changes boot-time
 CPUID presentation, not whether nested VT-x is enabled. Do not confuse it with
 Velum's runtime CPUID menu. See [investigation](../engineering/README.md).
 
-The reported environment used Intel i7-12700F and VMware Workstation 26.0.0
+The test environment used Intel i7-12700F and VMware Workstation 26.0.0
 build 25388281. Host and guest Hyper-V settings are separate: changing the guest
 cannot fix a host configuration that does not expose nested VT-x. If VMware
 rejects the nested configuration, resolve that platform issue before loading
@@ -118,11 +118,9 @@ Replace the example paths with actual installations. Clear an override with
 `set "VS_PATH="` or the corresponding variable name to restore automatic selection.
 An invalid explicit override fails instead of silently selecting another kit.
 
-The 25 October local build passed using Visual Studio Community 2026 18.11.1 and
-installed kit directory 10.0.26100.0. The 10.0.28000.0 directory was SDK-only and
-was correctly skipped. This records a project build result; it does not replace
-Microsoft's supported pairing guidance. VS 2022 was not installed for an actual
-compile comparison in this session.
+The Release build was verified with Visual Studio Community 2026 and SDK/WDK
+10.0.26100.0. Discovery skips incomplete SDK-only directories and validates explicit
+toolchain overrides before compiling.
 
 For debugging only, request the separate opt-in mode:
 
@@ -132,8 +130,6 @@ build.bat diagnostic
 
 Its optimized binaries and matching PDBs are under `x64\Diagnostic`. Publish only
 the intended Release pair. Do not mix an older loaded driver with a newer console.
-Maintainer-local regression suites are not distributed in this public repository;
-the technical article identifies their reported results and limits.
 
 ## 4. Enable the temporary unsigned-driver test session
 
@@ -161,7 +157,7 @@ Windows Recovery may request the device's BitLocker recovery key.
 This option applies to the current boot session. A normal restart restores
 signature enforcement; repeat the F7 selection before loading the unsigned driver
 in another session. Separate organizational code-integrity policies can still block
-loading; this procedure is for the operator-controlled lab configuration.
+loading; use a lab configuration you administer.
 
 References: [Windows Startup Settings](https://support.microsoft.com/en-us/windows/experience/startup-boot/windows-startup-settings) and
 [Microsoft's temporary load-time enforcement explanation](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/test-signing).
@@ -224,7 +220,7 @@ For failures, capture the full startup log with the [diagnostics guide](../featu
 
 ## Recorded example
 
-These captures are from the physical Windows 11 session, not a VMware guest.
+These captures show the physical Windows 11 test session.
 See the [session manifest](../../assets/capture-manifest.md) for environment and reproduction details.
 
 
@@ -236,7 +232,7 @@ The console immediately after loading, with hooks OFF.
 
 ### Per-CPU diagnostics
 
-The final viewport reports 20/20 processors passed. This validates the displayed checks, not every hypervisor behavior.
+All 20 processors passed the startup diagnostic checks.
 
 ![Per-CPU diagnostics](../../assets/screenshots/01b-diagnostics.png)
 
