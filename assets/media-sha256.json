@@ -1,0 +1,14 @@
+{
+  "demos/03-scoped-deny.gif": "45a8b33dbd550f0d403c29dc81d21cae25ed4ec64ea503f9b59f19df17864cad",
+  "demos/06-cpuid-apply-reset.gif": "bbc03db639d126c62af450ff3b1f549b67e90441bd4426951dccd32a1aa1d447",
+  "screenshots/00-debugview-startup.png": "16aca614b8a8455464144735ebfcfc0eb10e7c2ccb31426712140bf82239211d",
+  "screenshots/01-dashboard.png": "0feca2972107eeb47bc82369b96ce9fe1ecb3b203cf9683bc8336aae1ee3d03d",
+  "screenshots/01b-diagnostics.png": "d88378d4c60045b09656be50207499ff646dbe9eef6862b91eb65447b45a30a2",
+  "screenshots/02-hook-telemetry.png": "fa178f19e02815990c725f34b867c0b4253d33e3e5584686c62949de2536665c",
+  "screenshots/04-access-reduction.png": "165db8b83c7e8c327030486d67c699ec0661907303e83efeafd93662dce6f344",
+  "screenshots/04a-access-policy.png": "b340b7320171c38a11bbd5767797ef6dd16a075b04c31f39f8243a7f569f6a4f",
+  "screenshots/04b-access-independent-result.png": "11ec16b71d97ea55c4b6240ecc3fe3e6e3cb380b5aa4ca2d619ea4d49852750f",
+  "screenshots/05-kernel-summary.png": "fc8befc9a24affd23dfb76981aace4b17cb7be24a5451d3b1d5731acc689cbc4",
+  "screenshots/07-tsc-configuration.png": "fdc78401cbb2ed2018b503457f643d5165079f5ea6bf110fe6970b08ed5dae59",
+  "screenshots/08-shutdown.png": "63d57d41b0c36d7c324b79698ef52e72851f6eead654a466a6e4b5f36e41e77c"
+}
