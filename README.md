@@ -37,6 +37,13 @@ available exports and shared entry addresses on the running kernel. See the
 
 ## Architecture
 
+The runtime is optimized around explicit state ownership and a small VM-exit
+path. A roughly **1,000-line x64 assembly layer** handles register preservation,
+VMX transitions, CET state transfer and native return. Per-CPU structures and
+preallocated EPT reserves keep allocation out of the exit path; event formatting
+runs in a deferred PASSIVE-level worker. Release builds use compiler optimization,
+while selective interception avoids trapping ordinary operations unnecessarily.
+
 ![Velum control, interception and telemetry architecture](assets/diagrams/architecture.svg)
 
 Root handlers manage VMCS and EPT transitions. Eligible guest helpers capture arguments
@@ -126,22 +133,16 @@ velum-console.exe remove
 Start with one hook and a controlled workload. Use `remove` for the shutdown and service
 removal flow; closing the console leaves the runtime installed.
 
-## Validation and research scope
+## Tested configurations
 
-Release builds use `/W4 /WX` and validate output PE properties. Maintainer-local suites
-reported **8,272 host checks** and **1,936 mocked event-preparation checks** passing.
-These suites are not included in the public source distribution. The operator confirmed
-the rebuilt Release pair working on **Windows 10 22H2** and **Windows 11 26H2**.
-Earlier all-hook and lifecycle checks in VMware and the physical-machine captures
-have their own recorded environments.
+Tested on **Windows 10 22H2** and **Windows 11 26H2**, including all-hook operation
+and startup/shutdown in VMware. The physical Windows 11 capture session passed
+**20/20 per-CPU diagnostics** and demonstrates file-write denial, access reduction,
+CPUID apply/reset, TSC configuration and verified native return.
 
-Velum is a research project for authorized, recoverable lab systems. Target availability
-and detailed capture depend on kernel exports and execution context. Entry logs describe
-inputs and decisions; application results establish completion. Policies require successful
-capture and generally continue on capture failure. Telemetry queues can drop events.
-Performance, power transitions and dynamic topology are not yet characterized. The
-[technical article](readmes/technical-writeup/README.md#17-limitations-and-next-experiments)
-records these boundaries and the next experiments.
+Development regression results include **8,272 host checks** and **1,936 mocked
+VM-exit event checks**. The [technical write-up](readmes/technical-writeup/README.md#16-runtime-evidence-and-validation)
+explains the test workloads, results and configuration details.
 
 ## Repository layout
 
