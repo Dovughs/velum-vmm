@@ -55,9 +55,9 @@ Counters saturate at UINT64_MAX. The drain worker suppresses its own guest
 capture to limit feedback; other console/system allocations can still generate
 traffic. Filtering happens after capture, so heavy traffic can lose events.
 
-These routines remain observation-only, with no return hooks, argument changes,
-allocation/free correlation or leak detection. Input totals never prove successful
-allocation, live memory usage or freed bytes. Hooks/log routes remain opt-in.
+These hooks provide entry telemetry with numeric filtering and grouped input
+totals. Allocation completion and lifetime analysis require matching return/free
+observations; the summary records requested work. Hooks and routes are opt-in.
 
 ## Walkthrough
 
@@ -70,21 +70,20 @@ allocation, live memory usage or freed bytes. Hooks/log routes remain opt-in.
    synchronization barrier; queued events may arrive afterwards.
 6. Disable the route and hook at the end.
 
-These totals are observed input traffic, not allocation ownership, leaks, live
-bytes, successful copies, or return values. A return-site module is not a full
-call stack. Use a dedicated test driver for exact Ex/Mm calls; a user-mode
-workload can exercise wrappers but does not guarantee a specific exported entry.
+Use a dedicated test driver to exercise exact Ex/Mm entries and compare its
+results with the observed input totals. Module attribution identifies the
+immediate return site; wrappers can contribute additional events.
 
 Implementation: [telemetry](../../../hypervisor/src/kernel_telemetry.c),
 [capture schema](../../../shared/kernel_telemetry.h).
 
 ## Recorded example
 
-These captures are from the physical Windows 11 session, not a VMware guest.
+These captures show the physical Windows 11 test session.
 See the [session manifest](../../../assets/capture-manifest.md) for environment and reproduction details.
 
 ### Kernel telemetry summary
 
-Ambient ExAllocatePool2 input observations. This run visibly reports 1,303,982 queue drops and 2,384 summary overflow events: it is lossy telemetry, not a complete allocation accounting or performance benchmark.
+ExAllocatePool2 observations grouped by routine, module and tag. The displayed queue-drop count (1,303,982) and summary-overflow count (2,384) make capture saturation visible alongside the input totals.
 
 ![Kernel telemetry summary](../../../assets/screenshots/05-kernel-summary.png)
