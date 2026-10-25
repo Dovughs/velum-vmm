@@ -68,11 +68,11 @@ Implementation: [matching](../../../shared/telemetry_match.h),
 
 ## Recorded example
 
-These captures are from the physical Windows 11 session, not a VMware guest.
+These captures show the physical Windows 11 test session.
 See the [session manifest](../../../assets/capture-manifest.md) for environment and reproduction details.
 
 ### NtWriteFile entry telemetry
 
-A six-byte request from the scoped caller is observed. CONTINUE describes the policy decision, not the completed write result.
+A six-byte request is captured with its caller, path and input fields. CONTINUE indicates that the policy allowed execution to proceed.
 
 ![NtWriteFile entry telemetry](../../../assets/screenshots/02-hook-telemetry.png)
