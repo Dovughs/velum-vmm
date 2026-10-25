@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="440" viewBox="0 0 1000 440" role="img" aria-labelledby="title desc">
+<title id="title">Velum architecture</title>
+<desc id="desc">The console sends versioned IOCTL settings to kernel control and lifecycle, which configures per-CPU VMCS and EPT. Entry traps reach VM-exit handling, guest capture and policy, bounded event queues, then a PASSIVE drain worker that formats telemetry for the console.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8aa4bf"/></marker></defs>
+<rect width="1000" height="440" rx="14" fill="#0d1117"/>
+<g fill="none" stroke="#8aa4bf" stroke-width="2" marker-end="url(#arrow)">
+<path d="M 290 100 H 370"/><path d="M 625 100 H 705"/>
+<path d="M 835 140 V 195"/><path d="M 710 235 H 630"/>
+<path d="M 375 235 H 295"/><path d="M 165 275 V 330"/>
+<path d="M 40 370 H 20 V 100 H 35"/>
+</g>
+<g fill="#161f2b" stroke="#48627d" stroke-width="1.5">
+<rect x="40" y="60" width="250" height="80" rx="10"/>
+<rect x="375" y="60" width="250" height="80" rx="10"/>
+<rect x="710" y="60" width="250" height="80" rx="10"/>
+<rect x="710" y="195" width="250" height="80" rx="10"/>
+<rect x="375" y="195" width="250" height="80" rx="10"/>
+<rect x="40" y="195" width="250" height="80" rx="10"/>
+<rect x="40" y="330" width="250" height="80" rx="10"/>
+</g>
+<g font-family="Segoe UI, Arial, sans-serif" text-anchor="middle" fill="#e6edf3" font-size="19">
+<text x="165" y="93">Console</text><text x="165" y="118" font-size="15" fill="#a7bfd6">Versioned IOCTL settings</text>
+<text x="500" y="93">Kernel control</text><text x="500" y="118">and lifecycle</text>
+<text x="835" y="93">Per-CPU VMCS</text><text x="835" y="118">and EPT</text>
+<text x="835" y="228">Entry trap and</text><text x="835" y="253">VM-exit handling</text>
+<text x="500" y="228">Guest capture</text><text x="500" y="253">and policy</text>
+<text x="165" y="228">Bounded</text><text x="165" y="253">event queues</text>
+<text x="165" y="363">PASSIVE drain</text><text x="165" y="388">and formatting</text>
+</g>
+<text x="375" y="375" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#a7bfd6">Deferred telemetry returns to the console.</text>
+</svg>
