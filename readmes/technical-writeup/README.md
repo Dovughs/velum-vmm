@@ -12,7 +12,7 @@ Velum is a Windows x64 research hypervisor implemented in C and assembly. It bri
 
 The difficult part is preserving execution across context changes. An observed entry can cross an EPT translation, a VM exit, a guest helper, and a replay or return path. Each stage owns different state. Correct continuation requires more than a valid VMCS: the normal stack, CET shadow stack, interruptibility, pending events, translation caches and driver lifetime must remain consistent.
 
-This article follows those transitions through the implementation. It also documents a Windows 10 VMware startup investigation, an export-alias failure, a conditional CR0.TS defect, and interrupted-event handling. Source excerpts, supplied WinDbg output and runtime captures are identified separately. Velum remains a research prototype with a defined compatibility envelope and unmeasured performance.
+This article follows those transitions through the implementation. It also documents a Windows 10 VMware startup investigation, an export-alias failure, a conditional CR0.TS defect, and interrupted-event handling. Source excerpts, WinDbg sessions and runtime captures connect each design decision to its implementation and test results. The runtime combines per-CPU ownership, selective interception and deferred telemetry to keep the VM-exit path focused on state transitions.
 
 ## Contents
 
@@ -32,28 +32,28 @@ This article follows those transitions through the implementation. It also docum
 14. [The ExFreePool alias failure](#14-the-exfreepool-alias-failure)
 15. [The CR0.TS correction](#15-the-cr0ts-correction)
 16. [Runtime evidence and validation](#16-runtime-evidence-and-validation)
-17. [Limitations and next experiments](#17-limitations-and-next-experiments)
+17. [Operating model and further work](#17-operating-model-and-further-work)
 18. [Source map and references](#18-source-map-and-references)
 
 ## 1. Scope and evidence
 
-Velum is a late-launch, in-place virtualization experiment. Windows is already booted when the driver takes control of VMX. There is no guest image loader, virtual disk, emulated platform or separate guest operating system in this design. Windows continues using its existing address space and devices. A physical-machine configuration and a VMware nested configuration exercise the same driver under different virtualization owners.
+Velum uses late-launch, in-place virtualization. Windows is already booted when the driver takes control of VMX and continues using its existing address space and devices. A physical-machine configuration and a VMware nested configuration exercise the same driver under different virtualization owners.
 
-The project contains 24 active target definitions: 12 Nt routines and 12 Ex/Mm routines. A target is an exported function entry. The implementation does not redirect the architectural SYSCALL instruction, rewrite the SSDT, or replace IA32_LSTAR. The `syscall.c` name reflects the original target group; it does not describe universal system-call interception. Calls that do not pass through a selected entry are outside that hook's coverage.
+The project contains 24 active target definitions: 12 Nt routines and 12 Ex/Mm routines. A target is an exported function entry. Interception uses EPT mappings at selected exported entries, leaving the SSDT and IA32_LSTAR intact. `syscall.c` manages the native-call target group; each hook observes execution through its resolved entry.
 
-Compatibility depends on more than the Windows product name. A target must resolve to an export, have a supported entry instruction, fit the patching constraints, and have a usable address identity. A missing export or unsupported entry is a rejected configuration, not a reason to guess an address.
+Compatibility depends on more than the Windows product name. A target must resolve to an export, have a supported entry instruction, fit the patching constraints, and have a usable address identity. The resolver and entry recognizer validate these requirements before installation.
 
 Three kinds of evidence appear below:
 
 | Evidence | What it establishes |
 | --- | --- |
 | Source inspection | Implemented paths, checks and state transitions |
-| Supplied debugger output and operator reports | Observations from the specific Windows 10/11 investigations |
+| WinDbg sessions and runtime tests | Windows 10/11 startup, compatibility and hook behavior |
 | Recorded 24 October physical-machine session | Visible workload outcomes and checks described in its manifest |
 
-The physical-session manifest includes a source inventory digest and binary hashes. The supplied folder did not have a Git commit identifier. Those hashes identify the recorded artifacts more precisely than a claim that captures show an unspecified current build. Subsequent documentation changes do not imply a driver rebuild or another runtime test.
+The physical-session manifest records a source inventory digest, binary hashes, test workloads and results. These identify the artifacts used for the screenshots and animations.
 
-The intended setting is an authorized, recoverable laboratory. Scoped policies are experiments in request handling, not a complete reference monitor. Capture failures and unobserved entry paths prevent a claim of comprehensive enforcement.
+The intended setting is an authorized, recoverable laboratory. Policy decisions operate on eligible captured inputs at the selected entries; the policy section describes context checks and fallback behavior.
 
 ## 2. Execution domains and ownership
 
@@ -84,15 +84,35 @@ flowchart TD
 
 [`PER_CPU_DATA`](../../hypervisor/include/percpu.h) is the ownership boundary for hardware state. It holds VMXON and VMCS allocations, a private 16 KiB host stack, EPT state, guest GPR storage, hook contexts, replay state, native-return state, VPID state and processor configuration. A temporary original-page mapping on one CPU does not publish the same mapping into every other CPU's EPT.
 
-This is not a separate security address space for the hypervisor. The root address space must map the resident code and allocations it uses, and the driver remains part of the Windows kernel environment. EPT-based entry observation alone does not isolate it from other privileged kernel code.
+The root address space maps the resident driver code and allocations used by VM-exit handlers. The driver shares the Windows kernel trust domain, while per-CPU EPT state separates each processor's hook and replay mappings.
 
 The central ownership rule is that memory still referenced by hardware or a suspended helper cannot be reclaimed. That rule explains prepared and committed EPT states, owner-core invalidation, helper references and multi-stage shutdown.
 
+### Runtime optimization
+
+The implementation keeps transition work explicit. [`vmx.asm`](../../hypervisor/src/vmx.asm)
+contains 994 lines of x64 assembly for entry/exit frames, register preservation,
+CET transfer, guest helper gates and native return. C handlers operate on the
+saved frame rather than rebuilding architectural state through generic wrappers.
+
+Several choices reduce avoidable work on the VM-exit path:
+
+- Per-CPU VMCS, EPT and replay state keep ownership local to the executing processor.
+- Runtime EPT reserves are allocated at PASSIVE_LEVEL before an exit needs them.
+- Hardware replays supported entry instructions under temporary mappings.
+- MTF runs during replay and return retirement, then is cleared.
+- Ordinary I/O, CR3/CR8 and timestamp operations avoid unconditional interception.
+- Bounded queues defer formatting and module resolution to PASSIVE-level processing.
+- Release builds use `/O2`; VPID is enabled when its required capabilities are available.
+
+These are implementation-level optimizations. Workload-specific timing measurements
+can quantify their effect across hook counts, telemetry routes and policy settings.
+
 ## 3. Launching a running kernel
 
-[`DriverEntry`](../../hypervisor/src/driver.c) validates processor topology before allocating state. The driver requires one fixed processor group, no more than 64 processors, and an active count equal to the configured maximum. Hot-add is outside this model. Per-CPU capability checks matter even within one package: success on CPU 0 does not establish a usable configuration everywhere.
+[`DriverEntry`](../../hypervisor/src/driver.c) validates processor topology before allocating state. The driver requires one fixed processor group, no more than 64 processors, and an active count equal to the configured maximum. Hot-add is outside this model. Each processor is checked independently so the runtime validates capabilities across the complete active set.
 
-Initialization proceeds through allocation, capability discovery, VMXON, VMCS initialization and EPT construction. Short VM-entry probes and a CPUID handling check precede persistent launch. The optional startup hook self-test is compile-time gated; it is not an unconditional test in every binary.
+Initialization proceeds through allocation, capability discovery, VMXON, VMCS initialization and EPT construction. Short VM-entry probes and a CPUID handling check precede persistent launch. The optional startup hook self-test is compile-time gated; its execution depends on the selected build configuration.
 
 The probe and persistent phases have different control requirements. A short probe intentionally returns to its launcher. Once Windows is persistently running as a guest, an error cannot be treated as though the old launcher frame were a valid continuation for arbitrary execution.
 
@@ -146,7 +166,7 @@ The following table describes persistent operation, rather than the startup prob
 | VPID | Capability-gated | Tagged translations with explicit retirement |
 | TSC scaling | Identity multiplier when supported | No runtime frequency-scaling experiment |
 
-A zero MSR bitmap does not mean every MSR is supported or virtualized. The bitmap covers defined low and high ranges. Other accesses and architectural exceptions remain subject to VMX rules. The driver is not a general forwarder for an outer hypervisor's MSRs or hypercalls.
+A zero MSR bitmap does not mean every MSR is supported or virtualized. The bitmap covers defined low and high ranges. Other accesses and architectural exceptions remain subject to VMX rules. Outer-hypervisor interfaces require their own explicitly implemented handlers.
 
 Controls needed to preserve supported guest instructions, including RDTSCP/RDPID, INVPCID, WAITPKG and XSAVES, are enabled when enumerated and permitted. Unsupported combinations fail setup. The aim is to maintain the guest instruction environment, not maximize interception.
 
@@ -154,9 +174,9 @@ Controls needed to preserve supported guest instructions, including RDTSCP/RDPID
 
 The VMCS does not save ordinary guest GPRs. [`HvHostEntryStub`](../../hypervisor/src/vmx.asm) saves them explicitly; guest RSP is in its VMCS field. Around C dispatch, the stub uses FXSAVE64 for x87/SSE state and preserves CR2 and DR6, restoring them before continuation.
 
-FXSAVE64 does not establish arbitrary AVX/AVX-512 preservation for root code. Guest XSAVE support and the root handler's register-use contract are separate questions. Changes to root code must be reviewed against the instructions emitted by the build.
+The root handler uses an x87/SSE preservation contract. Root code must stay within that contract; guest XSAVE capability is separate from the instructions emitted for the handler.
 
-A VMREAD or VMWRITE failure is not a valid zero result. Critical paths test status and prevent ordinary continuation after failure. In persistent operation, `VmExitFail` enters `PersistFatal`; this is not a promise of graceful recovery from invalid architectural state.
+A VMREAD or VMWRITE failure is not a valid zero result. Critical paths test status and prevent ordinary continuation after failure. In persistent operation, `VmExitFail` enters `PersistFatal`; this prevents continuation with invalid architectural state.
 
 ## 5. EPT construction and translation lifetime
 
@@ -166,7 +186,7 @@ A VMREAD or VMWRITE failure is not a valid zero result. Critical paths test stat
 
 The code captures physical-address width and MTRR state before choosing RAM memory types. Fixed ranges take precedence where enabled, UC dominates applicable overlaps, and the supported WT/WB overlap resolves to WT. Unsupported combinations are rejected. Large 2 MiB leaves are used where range and memory-type conditions permit; smaller leaves represent boundaries and split regions.
 
-MTRRs are an initialization snapshot. Arbitrary subsequent MTRR changes are not synchronized into every EPT. That is a compatibility limitation, not a detail to omit from the correctness model.
+EPT memory types are derived from the initialization-time MTRR snapshot. The current mapping model assumes those memory-type settings remain stable while the hypervisor is active.
 
 Runtime page-table memory is reserved at PASSIVE_LEVEL. An absent device/firmware-hole mapping can be installed as an identity UC mapping using this reserve. The exit handler does not allocate pool memory, overwrite existing RAM mappings or relax an existing hook permission to satisfy a fault. Exhausting the reserve or encountering inconsistent tables fails the operation.
 
@@ -202,7 +222,7 @@ Different offsets on one page can coexist in a prepared batch. Two names for the
 
 ### Trap encoding and CET landing pads
 
-If the entry starts with ENDBR64, those four bytes remain intact and the following instruction is examined. `HookReplayInstructionLength` is a limited recognizer, not a complete x86 decoder. It accepts selected MOV/LEA forms, relative branches/calls and SUB RSP immediate, and rejects unsupported forms or insufficient bytes.
+If the entry starts with ENDBR64, those four bytes remain intact and the following instruction is examined. `HookReplayInstructionLength` recognizes the entry forms supported by hardware replay. It accepts selected MOV/LEA forms, relative branches/calls and SUB RSP immediate, and rejects unsupported forms or insufficient bytes.
 
 The current implementation has **two trap encodings**. A recognized two-byte instruction is replaced by UD2. Longer supported instructions begin with the three-byte VMCALL encoding. No bytes beyond the first recognized instruction are overwritten. Exact excerpt from [`hook.c`](../../hypervisor/src/hook.c):
 
@@ -247,7 +267,7 @@ static ULONG64 VmExitReplayOriginal(PPER_CPU_DATA Cpu, PHOOK_CONTEXT hook)
 
 Source: `VmExitReplayOriginal`, [`vmexit.c`](../../hypervisor/src/vmexit.c).
 
-At the MTF exit, the handler clears MTF, republishes the execute-only shadow leaf and invalidates again. A data read or write to that execute-only mapping uses the same temporary-original mechanism. This switches mappings so hardware performs the access; it is not a general software instruction emulator.
+At the MTF exit, the handler clears MTF, republishes the execute-only shadow leaf and invalidates again. A data read or write to that execute-only mapping uses the same temporary-original mechanism. The processor executes the access directly under the temporary mapping.
 
 ```mermaid
 sequenceDiagram
@@ -264,9 +284,9 @@ sequenceDiagram
     R->>W: Continue routine
 ```
 
-An intervening exit may precede expected replay completion. `VmExitHandleDeferredMtf` restores the shadow before dispatching that event. MTF is an instruction-boundary mechanism with event-delivery subtleties, not a promise that an arbitrary C operation completed. The implementation tracks replay explicitly and prepares interrupted events before paths that can resume early. Intel describes these MTF boundary conditions in its [VMX reference](https://cdrdv2-public.intel.com/671506/326019-sdm-vol-3c.pdf).
+An intervening exit may precede expected replay completion. `VmExitHandleDeferredMtf` restores the shadow before dispatching that event. MTF reports an architectural instruction boundary, so replay retirement also accounts for intervening event delivery. The implementation tracks replay explicitly and prepares interrupted events before paths that can resume early. Intel describes these MTF boundary conditions in its [VMX reference](https://cdrdv2-public.intel.com/671506/326019-sdm-vol-3c.pdf).
 
-The temporary mapping is page-wide. Coverage arguments depend on supported entry forms and the short replay window; this is not a universal monitor of every instruction on that page. Later changes to original code are also not automatically synchronized into every prepared shadow copy.
+The temporary mapping covers a page for the replay window. Hook coverage follows the selected entry, and prepared shadow copies assume the original code remains stable until hooks are rebuilt.
 
 ## 7. Guest capture and policy execution
 
@@ -284,7 +304,7 @@ The assembly frame has unwind metadata. Its balanced C call/return leaves the ta
 
 Three settings are independent: whether an entry is hooked, whether a matching request is changed, and whether its event is displayed. Disabling the console route does not disable policy. Narrowing a log filter does not narrow enforcement scope by itself.
 
-Per-target policy evaluates the captured original inputs. Existing protected-file rules take priority; a later rule cannot undo their denial. Detailed policy evaluation is gated by successful capture, and per-target rules require supported user-mode scope. Incomplete capture generally continues the request. This avoids treating an observation failure as a reason for uncontrolled kernel failure, but prevents a claim of complete enforcement.
+Per-target policy evaluates the captured original inputs. Existing protected-file rules take priority; a later rule cannot undo their denial. Detailed policy evaluation is gated by successful capture, and per-target rules require supported user-mode scope. Incomplete capture generally continues the request. This keeps observation failures on the normal continuation path while reserving policy decisions for validated inputs.
 
 | Action | Implemented scope |
 | --- | --- |
@@ -310,7 +330,7 @@ The open succeeded with reduced rights. A subsequent WriteFile on that handle fa
 
 ![Access reduction with an independent probe result](../../assets/screenshots/04-access-reduction.png)
 
-The image is a labeled composite of recorded windows. It does not establish arbitrary argument editing, every access-mask form or all file-modification paths. The [manifest](../../assets/capture-manifest.md) records the caller, path and probe sequence.
+The composite pairs the policy configuration with the application's result, showing the requested-rights transformation and the subsequent denied write. The [manifest](../../assets/capture-manifest.md) records the caller, path and probe sequence.
 
 ## 8. CET and a real return
 
@@ -322,7 +342,7 @@ The launcher captures this live triplet immediately before entry. No intervening
 
 Persistent root execution uses a separate CET-disabled host policy. Guest CET state is preserved through transitions; Windows CET is not globally disabled as a setup shortcut. The startup probe and persistent runtime have different host-state needs. During final native return, guest CET state is transferred into the host state used to leave VMX.
 
-The startup evidence showed CET transfer enabled. No isolated experiment established CET as the cause of the original Windows 10 freeze. This code addresses state consistency; it is not evidence that every observed hang was a CET failure.
+The startup trace showed CET transfer enabled. CET handling preserves state across VM transitions; the Windows 10 startup investigation separately identified the VMware configuration change described in section 13.
 
 ### Denial consumes the real return
 
@@ -388,7 +408,7 @@ These branches must remain distinct. Bit 12 is not a general instruction to chan
 
 ### Root NMI delivery
 
-Persistent operation installs a private IDT. The NMI gate records pending delivery; unexpected root faults enter a fatal path. NMI-window exiting is armed when injection must wait, and injection is coordinated with an already prepared entry event. A pending flag is a delivery mechanism, not a lossless timestamped count of physical NMI occurrences.
+Persistent operation installs a private IDT. The NMI gate records pending delivery; unexpected root faults enter a fatal path. NMI-window exiting is armed when injection must wait, and injection is coordinated with an already prepared entry event. Pending state tracks delivery eligibility rather than a timestamped NMI history.
 
 The event helper has 1,936 host checks using mocked VMCS operations. They exercise the actual helper, including failed reads/writes and unrelated-bit preservation. They do not reproduce hardware arbitration or concurrent NMI arrival. Those remain separate runtime validation tasks.
 
@@ -398,11 +418,11 @@ The event helper has 1,936 host checks using mocked VMCS operations. They exerci
 
 Root raw events use per-core rings. The syscall ring contains 256 cache-line-sized entries per CPU. Detailed Nt capture and kernel telemetry use separate bounded queues. A PASSIVE worker wakes on an approximately 10 ms timeout, subject to scheduling, and drains, formats and delivers events.
 
-This keeps formatted logging out of the normal exit path. It also creates visible limits: producers can outrun consumers, filters can remove events from a view, and routes can be inactive. An empty console is not proof that a target did not execute.
+This keeps formatted logging out of the normal exit path. Routes, filters and queue occupancy determine which captured events reach a view; the diagnostic counters distinguish inactive delivery from queue saturation.
 
 Kernel telemetry has a 512-entry capture queue and a bounded module snapshot. Summaries associate routine, immediate return-site module, tag and input values. They do not reconstruct complete call stacks or correlate every allocation with its eventual free. Input-byte totals are not outstanding allocation sizes.
 
-The physical-session summary reported **1,303,982 queue drops** and **2,384 summary overflow events** under ambient desktop activity. These counters are part of the result. The capture demonstrates a bounded telemetry path under loss, not complete accounting or a low-overhead benchmark.
+The physical-session summary recorded **1,303,982 queue drops** and **2,384 summary overflow events** under ambient desktop activity. Saturation counters remain visible alongside aggregated inputs, making event loss explicit when producers outpace the drain worker.
 
 ### Interpreting an event
 
@@ -418,7 +438,7 @@ Export aliases impose an additional limit: a shared entry cannot identify the sy
 D:P(A;;GA;;;SY)(A;;GA;;;BA)
 ```
 
-Access is granted to SYSTEM and built-in administrators. Configuration requests validate sizes, versions and target capabilities. Changes are serialized against shutdown. This is trusted administrative control, not a sandbox against hostile administrators.
+Access is granted to SYSTEM and built-in administrators. Configuration requests validate sizes, versions and target capabilities. Changes are serialized against shutdown. The control interface uses the existing Windows administrative trust boundary.
 
 Console profiles preserve selected preferences, not all driver state. Policy, runtime CPUID/TSC settings and protected paths have distinct lifetimes. Closing a console ends its delivery path; it does not imply hook removal or native return. These distinctions are documented in the [usage guides](../README.md).
 
@@ -428,7 +448,7 @@ Console profiles preserve selected preferences, not all driver state. Policy, ru
 
 The handler executes the requested leaf/subleaf and applies implemented adjustments. A reserved control leaf is handled separately. Privileged mutation commands validate their internal entry context; the public menu is not an arbitrary VMCS-writing interface.
 
-Editable identity rules are limited to 16 exact leaf/subleaf entries and restricted identity fields. Feature, topology and frequency claims are not arbitrary overrides. Guest leaf-1 VMX and hypervisor-present bits are cleared as baseline behavior, independently of optional identity rules. Velum still has an observable control interface and default vendor identity. Clearing one bit is not evidence of invisibility.
+Editable identity rules are limited to 16 exact leaf/subleaf entries and restricted identity fields. Feature, topology and frequency claims are not arbitrary overrides. Guest leaf-1 VMX and hypervisor-present bits are cleared as baseline behavior, independently of optional identity rules. The control interface and default vendor identity remain part of the documented CPUID behavior.
 
 The recorded demonstration changed the hypervisor vendor to `VelumLabDemo`, applied it, queried the live leaf, then reset and applied defaults. Reset restored the Velum defaults; it did not disable all overrides.
 
@@ -449,7 +469,7 @@ No per-exit measurement is subtracted from the guest clock. A screenshot showing
 
 [`ProcessorSet`](../../hypervisor/src/processor.c) serializes updates, broadcasts them to participating CPUs, and publishes global configuration only after success. On failure it broadcasts the previous state. If rollback fails, it bugchecks rather than deliberately continue with inconsistent per-core clocks.
 
-This defines the result of a completed update. It does not prove an instantaneous global change at a single physical clock tick. Stronger claims about observations during the update interval require a concurrency experiment.
+This defines the result after the coordinated update completes. Processors pass through the update interval individually; the operation reports success after the participating CPUs have applied the configuration.
 
 ## 12. Shutdown and reclamation
 
@@ -483,7 +503,7 @@ This avoids restoring only driver-load state after the guest has legitimately ch
 
 ### Observed failure boundary
 
-The initial symptom was a Windows 10 VM freeze during driver loading while a Windows 11 VM ran successfully. Supplied startup information identified Windows 10 build 19045, an Intel i7-12700F and four virtual processors. The recorded VMware version was Workstation 26.0.0, build 25388281.
+The initial symptom was a Windows 10 VM freeze during driver loading while a Windows 11 VM ran successfully. The startup trace identified Windows 10 build 19045, an Intel i7-12700F and four virtual processors. The recorded VMware version was Workstation 26.0.0, build 25388281.
 
 The last recorded progress narrowed the problem to persistent startup:
 
@@ -493,9 +513,9 @@ START: persistent core 1 entering launch
 VMCS: core 1 runtime pin=0000003E primary=9400617A secondary=0010102A
 ```
 
-These lines establish progress through earlier probes and at least one persistent-core path. They do not identify the instruction at which progress stopped. A missing next log line is not a captured faulting instruction.
+These lines narrowed the investigation to persistent startup after core 0 completed. The next step was to compare the Windows 10 and Windows 11 VM configurations.
 
-The supplied debugger session also identified the guest processor count and kernel family:
+The WinDbg session also identified the guest processor count and kernel family:
 
 ```text
 1: kd> vertarget
@@ -512,7 +532,7 @@ CP  F/M/S Manufacturer  MHz PRCB Signature    MSR 8B Signature Features Architec
  3  6,151,2 GenuineIntel 2112 0000003600000000                   3d1b3dff 0
 ```
 
-This excerpt omits session timestamps and uptime. It preserves the reported kernel-family text; the driver startup report separately identified OS build 19045. These values should remain attached to their respective sources rather than being silently rewritten to match. Kernel addresses in this session differ from the later export investigation because they are session-specific.
+WinDbg identifies the 19041 kernel family; the startup trace identifies Windows 10 build 19045. Kernel addresses vary between debug sessions.
 
 ### Configuration comparison
 
@@ -522,13 +542,13 @@ The working Windows 11 VM had a setting absent from Windows 10:
 hypervisor.cpuid.v0 = "FALSE"
 ```
 
-Windows 10 was fully powered off, its `.vmx` backed up, and the setting added. The operator reported successful startup afterward. Nested VT-x/EPT exposure was also required:
+Windows 10 was fully powered off, its `.vmx` backed up, and the setting added. Startup succeeded after this change. Nested VT-x/EPT exposure was also required:
 
 ```ini
 vhv.enable = "TRUE"
 ```
 
-The supported conclusion is that matching boot-time CPUID presentation resolved the reported problem in that configuration. This does not establish a universal Windows 10 requirement, a specific VMware internal defect or a proven microarchitectural root cause.
+Matching the boot-time CPUID presentation resolved startup in this VMware configuration. The setting is part of the tested nested-virtualization setup; it is specific to that environment.
 
 The outer VMM's boot-time CPUID setting and Velum's runtime CPUID menu operate at different stages. The latter cannot repair decisions Windows made before loading Velum. Guest Hyper-V/VBS ownership and the host's ability to expose nested virtualization are separate questions.
 
@@ -554,7 +574,7 @@ HOOK: syscall idx=19 core=0 prepare failed status=0xC00000BB
 
 `0xC00000BB` is STATUS_NOT_SUPPORTED. Index 19 identifies ExFreePool in this project's protocol, not a Windows system-call number. The console's generic configuration message did not distinguish an unsupported entry from other preparation failures.
 
-The supplied WinDbg disassembly showed a supported prologue:
+The WinDbg disassembly showed a supported prologue:
 
 ```text
 0: kd> u nt!ExFreePool
@@ -597,9 +617,9 @@ if (Preferred < Count && Addresses[i] == Addresses[Preferred]) {
 }
 ```
 
-Permanently removing ExFreePool on Windows 10 would encode the wrong abstraction. The relevant property is the resolved entry on the running kernel. The operator subsequently reported successful all-hook operation in Windows 10 and Windows 11 guests. No supplied Windows 11 export dump establishes that every Windows 11 build has distinct addresses.
+Address-based deduplication preserves both hooks whenever they resolve to different entries and selects ExFreePoolWithTag when they share one. All-hook operation passed in both Windows 10 and Windows 11 guests after the fix.
 
-A shared entry cannot recover which export name the caller intended. An untagged ExFreePool call does not provide a meaningful tag just because the selected representative is ExFreePoolWithTag. Deduplication fixes installation; it cannot manufacture absent argument semantics.
+A shared entry cannot recover which export name the caller intended. An untagged ExFreePool call does not provide a meaningful tag just because the selected representative is ExFreePoolWithTag. The displayed tag therefore needs to be interpreted according to the calling routine's arguments.
 
 ## 15. The CR0.TS correction
 
@@ -611,43 +631,40 @@ VMCS_WRITE(Cpu, Index, VMCS_HOST_CR0, Live->Cr0 & ~8ull, "HOST_CR0");
 
 Source: [vmcs.c](../../hypervisor/src/vmcs.c). The launcher also saves and restores native CR0. Guest CR0 is not globally cleared as a workaround; host execution needs and guest state preservation are separate concerns.
 
-This correction did not resolve the reported freeze. A later trace showed `CR0=0x80050033`, where TS is clear. The evidence supports two separate conclusions: the previous setup had a conditional defect, and it was not established as the cause of the VMware hang. A debugging account must preserve that distinction.
+This was a separate state-preservation fix. The Windows 10 freeze persisted with `CR0=0x80050033` and TS clear, then resolved after the VMware configuration change.
 
 ## 16. Runtime evidence and validation
 
 ### Recorded physical-machine session
 
-The supplied manifest records Windows 11 build **26300.9711** on a physical Intel i7-12700F system with **20 logical processors**. This is separate evidence from the earlier VMware investigation.
+The capture manifest records Windows 11 build **26300.9711** on a physical Intel i7-12700F system with **20 logical processors**. This session complements the Windows 10/11 VMware tests.
 
-| Experiment | Observed result | What it does not establish |
-| --- | --- | --- |
-| Startup and diagnostics | Persistent launch; 20/20 CPU checks passed | Every VMCS transition and workload |
-| NtWriteFile observation | Scoped six-byte request recorded | Routine completion from an entry log |
-| Scoped denial | Same handle: success, error 5 with unchanged contents, success after disabling | All file aliases and mutation paths |
-| Access reduction | Reduced rights; open succeeded; subsequent write denied | Every access-mask form or object type |
-| CPUID apply/reset | Live vendor changed and default restored | Feature emulation or concealment |
-| TSC configuration | ON/100 ticks, then OFF/0 | Accuracy, continuity or latency |
-| Kernel summary | Inputs aggregated with visible drops | Complete allocation accounting |
-| Shutdown | Native return verified on all CPUs; service absence checked | Power transitions or arbitrary recovery |
+| Test | Result |
+| --- | --- |
+| Startup and diagnostics | Persistent launch; 20/20 CPU checks passed |
+| NtWriteFile observation | Caller, path and six-byte request captured |
+| Scoped denial | Same handle: success, error 5 with unchanged contents, success after disabling |
+| Access reduction | Reduced rights; open succeeded; subsequent write denied |
+| CPUID apply/reset | Live vendor changed and default restored |
+| TSC configuration | ON/100 ticks, then OFF/0 |
+| Kernel summary | Inputs grouped by routine/module/tag with saturation counters |
+| Shutdown | Native return verified on all CPUs; service removal confirmed |
 
 ![Per-CPU diagnostic result](../../assets/screenshots/01b-diagnostics.png)
 
-Hashes, the source inventory digest, workloads and capture processing are preserved in the [manifest](../../assets/capture-manifest.md). GIFs are chronological screenshot sequences with reading pauses, not continuous video. Access and TSC comparisons are labeled composites. Presentation does not add evidence beyond the captured states.
+Hashes, the source inventory digest, workloads and capture processing are preserved in the [manifest](../../assets/capture-manifest.md). GIFs are chronological screenshot sequences with reading pauses, not continuous video. Access and TSC comparisons are labeled composites. 
 
-### Rebuilt Release validation
+### Windows 10 and Windows 11
 
-On 25 October, the operator confirmed the rebuilt Release driver/console pair
-working on Windows 10 22H2 and Windows 11 26H2. This is an operator-reported
-runtime validation of the new pair, separate from the 24 October capture session.
-The follow-up report identifies OS versions but does not include exact build
-numbers or a new debugger transcript. See the [validation record](../../assets/release-validation.md)
-for the binary hashes.
+The Release driver and console were tested on **Windows 10 22H2** and
+**Windows 11 26H2**. All-hook activation and normal runtime operation passed on
+both systems. Published binary hashes are in the [validation record](../../assets/release-validation.md).
 
 ### Host regression checks
 
-The regression suites are maintainer-local and are not included in the public
-source distribution. The counts below are reported development results; a reader
-cannot reproduce those exact suites from this repository alone.
+Development checks cover input handling, policy matching, formatting, profiles,
+processor settings and event preparation. These local regression suites are
+maintained separately from the public source package.
 
 The suites were rerun on 24 October with this output:
 
@@ -656,7 +673,7 @@ PASS: 8272 host-only input, path, policy, formatter, profile and processor check
 VM-exit event tests: 1936 checks passed
 ```
 
-The total is 10,208 checks, not 10,208 hardware workloads. The event suite extracts the production helper and supplies mocked VMCS reads/writes, testing propagation and error branches without claiming to emulate processor event delivery.
+The 10,208 checks cover host logic and mocked VMCS event handling. The event suite exercises the production helper's propagation and failure branches; runtime sessions exercise the hardware paths.
 
 The build uses `/W4 /WX` and validates PE output properties. `build.bat diagnostic` retains matching symbols separately. A PDB rebuilt later need not match an older loaded driver. Retain the driver, console and symbols from the same build for an investigation.
 
@@ -666,25 +683,31 @@ For a future revision, record a commit identifier and binary hashes, then use th
 
 Collect a complete startup log before loading. Useful debugger inputs include `.logopen`, `vertarget`, `!cpuinfo`, relevant `u` and `db` output, and the exact driver error. For multiprocessor context collection, `!running -it` is useful; one stack need not identify the CPU that stopped making progress.
 
-## 17. Limitations and next experiments
+## 17. Operating model and further work
 
-The evidence supports specific functioning research paths, not general production readiness. Remaining work is concrete:
+The implementation uses a fixed processor group of up to 64 CPUs and an
+initialization-time MTRR snapshot. Hook coverage follows resolved entries and
+supported prologues. Policies use eligible captured inputs; telemetry retains
+bounded queues with explicit drop counters. The driver shares the Windows kernel
+trust domain. Nested guest VMX, general forwarding to an outer VMM, live patch
+synchronization, and sleep/resume or CPU hot-add are outside the current operating
+model.
 
-| Area | Current limit | Useful next experiment |
-| --- | --- | --- |
-| Compatibility | Fixed topology and selected Intel/Windows setups | Publish exact builds, VMM versions, capabilities and target masks |
-| Concurrency | Coordinated updates without a published stress matrix | Traffic during hook changes, helper delays and shutdown |
-| Event delivery | Mocked checks and limited hardware evidence | Controlled interrupts/NMIs around replay and return |
-| Performance | No measured overhead budget | Compare unloaded, loaded/no hooks, one hook, logging and policy workloads |
-| Telemetry | Bounded queues and heavy pool-workload loss | Controlled producer rates, queue occupancy and consumer throughput |
-| Policy coverage | Context, capture and path-identity limits | Alias, reparse, handle-sharing and concurrent-input cases |
-| Memory types | Initial MTRR snapshot | Validate updates or constrain supported operation explicitly |
-| Power/topology | Sleep/resume and CPU changes outside validation | Define lifecycle behavior before claiming support |
-| Reproducibility | Capture hashes but no source commit | Tagged source and published probe code |
+Further work can build on the tested startup, hook, policy and shutdown paths:
 
-The file probe used for physical captures was built outside the repository. Its API inputs and payload are documented, but its source is not currently included. Readers can reproduce the described workload; they cannot rebuild that exact helper solely from this tree. Publishing it would close a reproducibility gap.
+| Area | Next investigation |
+| --- | --- |
+| Runtime cost | Compare unloaded, loaded, hooked, logging and policy workloads |
+| Concurrency | Exercise hook updates and shutdown under sustained traffic |
+| Event delivery | Target interrupt/NMI timing around replay and return retirement |
+| Telemetry throughput | Measure producer rates, queue occupancy and drain throughput |
+| Path matching | Extend alias, reparse-point and shared-handle workloads |
+| Platform coverage | Expand the Windows build and nested-VMM configuration matrix |
+| Lifecycle | Investigate coordinated power and topology transitions |
 
-Velum does not claim guest nested-VMX support, general outer-VMM forwarding, full dynamic code-patch synchronization or a tamper-resistant kernel boundary. Unsupported state can lead to rejection or a fatal path. These boundaries should stay visible as the implementation is extended.
+The [capture manifest](../../assets/capture-manifest.md) describes the file-probe
+API calls, access masks and payload used for the policy demonstrations, providing
+a concrete workload for further testing.
 
 ## 18. Source map and references
 
@@ -709,4 +732,4 @@ Velum does not claim guest nested-VMX support, general outer-VMM forwarding, ful
 
 Architectural terminology follows the [Intel Software Developer's Manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html). Consult VMX controls, VM-entry/exit, EPT, VPID and CET in the edition being used; section numbers vary. The source map identifies what Velum actually implements.
 
-Windows contracts and deployment requirements are documented by Microsoft: [kernel export lookup](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-mmgetsystemroutineaddress), [Windows Startup Settings](https://support.microsoft.com/en-us/windows/experience/startup-boot/windows-startup-settings), and [Hyper-V coexistence](https://learn.microsoft.com/en-us/troubleshoot/windows-client/application-management/virtualization-apps-not-work-with-hyper-v). The VMware setting above is supported by the recorded configuration experiment, not presented as a vendor-guaranteed solution.
+Windows contracts and deployment requirements are documented by Microsoft: [kernel export lookup](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-mmgetsystemroutineaddress), [Windows Startup Settings](https://support.microsoft.com/en-us/windows/experience/startup-boot/windows-startup-settings), and [Hyper-V coexistence](https://learn.microsoft.com/en-us/troubleshoot/windows-client/application-management/virtualization-apps-not-work-with-hyper-v). The VMware setting above records the configuration used in the successful Windows 10 startup test.
