@@ -1,0 +1,24 @@
+# Generated build output
+/x64/
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.tlog
+*.log
+
+# Local settings and temporary files
+/.vscode/
+/backups/
+__pycache__/
+*.pyc
+*.tmp
+console-settings.bin
+
+# Local signing private keys; never publish test-certificate key material
+*.pfx
+*.p12
+*.key
+
+# Maintainer-local regression suite (not distributed)
+/tests/
