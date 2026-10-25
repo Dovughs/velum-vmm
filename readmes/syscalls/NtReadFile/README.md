@@ -4,7 +4,7 @@
 
 Observe requested reads from a file handle.
 
-## Capability contract
+## Capabilities
 
 | Capability | Support |
 | --- | --- |
@@ -27,20 +27,20 @@ Observe requested reads from a file handle.
 5. Verify the target name and captured fields before adding a filter or policy.
    Press Q to leave live view; the hook remains installed.
 
-If the row is missing, the export may not resolve or may share another target's
-address. If enabling fails, capture the named prepare failure rather than
-assuming the menu or a file path is invalid. No SSDT/signature fallback is used.
+The menu resolves exports at runtime and combines names that share an entry
+address. A preparation failure identifies the target and status in the driver
+log; use that entry when investigating an unavailable hook.
 
 ## Captured numeric fields
 
 These are input metadata. Field numbers match the filter menu, including gaps.
-Pointers and handles are numeric values; requested sizes are bytes. Not every
-field is available on every event. Use the event's partial-capture information.
+Pointers and handles are numeric values; requested sizes are bytes. The event's
+capture status identifies which fields are available.
 
 | Field number | Console label | Meaning / interpretation |
 | --- | --- | --- |
 | 1 | `file_handle` | Input file handle; not the file name or a returned handle. |
-| 2 | `bytes_requested` | Requested byte count; not completed, allocated, copied or freed bytes. |
+| 2 | `bytes_requested` | Requested byte count at function entry. |
 | 3 | `byte_offset` | Captured input offset; special signed sentinel values may appear numerically. |
 | 4 | `implicit_offset` | Whether the offset pointer was absent; does not supply the actual file position. |
 
@@ -56,14 +56,12 @@ All conditions combine with AND. Use `?` to list symbols for the selected field;
 numeric input is accepted. A missing field does not match. Reset with **[8] -> [9]**.
 See [filter semantics](../../features/filters/README.md).
 
-## Controlled workload and expected evidence
+## Example workload and expected result
 
 Read a disposable file using a dedicated test process. First confirm a matching event, then deny that caller/path and verify its read fails; disable policy and verify recovery.
 
-The event proves an observed input at this entry point. It does not establish
-completion, returned handles/pointers or transferred bytes. Pair it with the
-test application's result. Do not use incidental desktop traffic as proof of a
-specific API-to-entry mapping.
+The entry event records the request inputs. Compare it with the application's
+return status and output to follow the operation from entry to completion.
 
 ## Blocking and modification
 Select **NtReadFile -> [5] Policy -> [1] Edit scope**. Set a test caller PID
@@ -77,9 +75,9 @@ Policies apply to captured user-mode requests at PASSIVE_LEVEL. Kernel-mode call
 raw fallback and incomplete captures are not enforced. Protected-path denials
 take precedence. A log filter can hide a policy event without disabling policy.
 
-Argument changes are not supported for this target; deny is the only enforcement action.
+This target supports scoped denial while preserving the original arguments.
 
-## Target-specific limits
+## Interpretation notes
 
 The protected-file list does not deny reads through this target; use a scoped deny policy. The buffer, returned bytes and file contents are not logged.
 
@@ -89,7 +87,7 @@ Disable the policy and Apply first. Set log route Off and disable this hook.
 Remove any protected test paths separately with hooks OFF. A console exit alone
 does not remove hooks. See [shutdown](../../features/diagnostics/README.md).
 
-## Source of truth
+## Implementation
 
 - [Export metadata](../../../hypervisor/src/syscall.c)
 - [Field labels](../../../shared/telemetry_fields.h)
