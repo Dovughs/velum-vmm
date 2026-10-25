@@ -4,7 +4,7 @@
 
 Open an existing file or directory.
 
-## Capability contract
+## Capabilities
 
 | Capability | Support |
 | --- | --- |
@@ -27,15 +27,15 @@ Open an existing file or directory.
 5. Verify the target name and captured fields before adding a filter or policy.
    Press Q to leave live view; the hook remains installed.
 
-If the row is missing, the export may not resolve or may share another target's
-address. If enabling fails, capture the named prepare failure rather than
-assuming the menu or a file path is invalid. No SSDT/signature fallback is used.
+The menu resolves exports at runtime and combines names that share an entry
+address. A preparation failure identifies the target and status in the driver
+log; use that entry when investigating an unavailable hook.
 
 ## Captured numeric fields
 
 These are input metadata. Field numbers match the filter menu, including gaps.
-Pointers and handles are numeric values; requested sizes are bytes. Not every
-field is available on every event. Use the event's partial-capture information.
+Pointers and handles are numeric values; requested sizes are bytes. The event's
+capture status identifies which fields are available.
 
 | Field number | Console label | Meaning / interpretation |
 | --- | --- | --- |
@@ -57,14 +57,12 @@ All conditions combine with AND. Use `?` to list symbols for the selected field;
 numeric input is accepted. A missing field does not match. Reset with **[8] -> [9]**.
 See [filter semantics](../../features/filters/README.md).
 
-## Controlled workload and expected evidence
+## Example workload and expected result
 
 Use a controlled native open of an existing disposable file. Enable NtCreateFile during initial observation if the chosen high-level API does not hit this entry.
 
-The event proves an observed input at this entry point. It does not establish
-completion, returned handles/pointers or transferred bytes. Pair it with the
-test application's result. Do not use incidental desktop traffic as proof of a
-specific API-to-entry mapping.
+The entry event records the request inputs. Compare it with the application's
+return status and output to follow the operation from entry to completion.
 
 ## Blocking and modification
 Select **NtOpenFile -> [5] Policy -> [1] Edit scope**. Set a test caller PID
@@ -84,7 +82,7 @@ the result is `requested & ~remove`. Matching generic/MAXIMUM_ALLOWED requests
 are denied, not silently converted. MODIFIED and effective_access show the
 request transformation, not the final rights on a successful returned handle.
 
-## Target-specific limits
+## Interpretation notes
 
 DesiredAccess is reduced in RDX. Some user-mode open APIs reach NtCreateFile instead; verify which hook actually fires.
 
@@ -94,7 +92,7 @@ Disable the policy and Apply first. Set log route Off and disable this hook.
 Remove any protected test paths separately with hooks OFF. A console exit alone
 does not remove hooks. See [shutdown](../../features/diagnostics/README.md).
 
-## Source of truth
+## Implementation
 
 - [Export metadata](../../../hypervisor/src/syscall.c)
 - [Field labels](../../../shared/telemetry_fields.h)
