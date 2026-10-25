@@ -32,8 +32,8 @@ for its leaves. No missing CPU instruction support is synthesized.
 
 Defaults enable Velum vendor/interface overrides. OFF passes the editable
 identity queries through; existing leaf-1 hypervisor/VMX-bit handling remains.
-This is a controlled CPUID presentation experiment, not a claim of undetectable
-virtualization. OS-cached strings may not change. Dashboard Diagnostics checks
+Rules configure live CPUID identity responses. OS-cached strings may retain
+their earlier values. Dashboard Diagnostics checks
 applied rules across CPUs; an arbitrary single-thread query only observes its
 current CPU.
 
@@ -47,11 +47,11 @@ Implementation: [console](../../../user-mode/console/processor.c),
 
 ## Recorded example
 
-These captures are from the physical Windows 11 session, not a VMware guest.
+These captures show the physical Windows 11 test session.
 See the [session manifest](../../../assets/capture-manifest.md) for environment and reproduction details.
 
 ### CPUID apply and reset
 
-A live vendor query changes to VelumLabDemo and returns to the Velum default after Reset/Apply. Reset does not turn overrides OFF. This is a chronological screenshot sequence, not continuous video.
+A live vendor query changes to VelumLabDemo and returns to the Velum default after Reset/Apply. Reset does not turn overrides OFF. The GIF presents the captured states in chronological order.
 
 ![CPUID apply and reset](../../../assets/demos/06-cpuid-apply-reset.gif)
