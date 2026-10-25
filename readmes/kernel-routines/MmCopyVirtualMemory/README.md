@@ -4,7 +4,7 @@
 
 Experimentally observe cross-process memory-copy input metadata.
 
-## Capability contract
+## Capabilities
 
 | Capability | Support |
 | --- | --- |
@@ -27,15 +27,15 @@ Experimentally observe cross-process memory-copy input metadata.
 5. Verify the target name and captured fields before adding a filter or policy.
    Press Q to leave live view; the hook remains installed.
 
-If the row is missing, the export may not resolve or may share another target's
-address. If enabling fails, capture the named prepare failure rather than
-assuming the menu or a file path is invalid. No SSDT/signature fallback is used.
+The menu resolves exports at runtime and combines names that share an entry
+address. A preparation failure identifies the target and status in the driver
+log; use that entry when investigating an unavailable hook.
 
 ## Captured numeric fields
 
 These are input metadata. Field numbers match the filter menu, including gaps.
-Pointers and handles are numeric values; requested sizes are bytes. Not every
-field is available on every event. Use the event's partial-capture information.
+Pointers and handles are numeric values; requested sizes are bytes. The event's
+capture status identifies which fields are available.
 
 | Field number | Console label | Meaning / interpretation |
 | --- | --- | --- |
@@ -43,7 +43,7 @@ field is available on every event. Use the event's partial-capture information.
 | 2 | `source_address` | Input address in the source process; no bytes are logged. |
 | 3 | `target_process_object` | Target EPROCESS pointer, not a PID. |
 | 4 | `target_address` | Input destination address; no bytes are logged. |
-| 5 | `bytes_requested` | Requested byte count; not completed, allocated, copied or freed bytes. |
+| 5 | `bytes_requested` | Requested byte count at function entry. |
 | 6 | `previous_mode_argument` | Explicit PreviousMode argument, not a captured caller-mode filter. |
 | 7 | `bytes_copied_output_pointer` | Address of the completion-size output; never dereferenced by telemetry. |
 
@@ -59,21 +59,19 @@ All conditions combine with AND. Use `?` to list symbols for the selected field;
 numeric input is accepted. A missing field does not match. Reset with **[8] -> [9]**.
 See [filter semantics](../../features/filters/README.md).
 
-## Controlled workload and expected evidence
+## Example workload and expected result
 
 Observe only an authorized test driver using its own test processes and buffers. A generic Win32 copy/read call is not guaranteed to reach this export. Validate each Windows build separately.
 
-The event proves an observed input at this entry point. It does not establish
-completion, returned handles/pointers or transferred bytes. Pair it with the
-test application's result. Do not use incidental desktop traffic as proof of a
-specific API-to-entry mapping.
+The entry event records the request inputs. Compare it with the application's
+return status and output to follow the operation from entry to completion.
 
 ## Blocking and modification
-This routine is observation-only. There is no deny or argument-edit policy.
-Use [kernel summary](../../features/kernel-summary/README.md) for counts and
-input-byte totals, with overflow and return-site attribution limits.
+This target provides input telemetry and numeric filtering.
+The [kernel summary](../../features/kernel-summary/README.md) groups observed calls
+and requested bytes by routine, return-site module and tag, with overflow counters.
 
-## Target-specific limits
+## Interpretation notes
 
 This has no documented WDK contract. Process values are object pointers, not PIDs. Size/mode/output-size-pointer need eligible guest stack capture; missing sizes are not zero. No copied data or completion size is read.
 
@@ -83,7 +81,7 @@ Set log route Off and disable this hook.
 Remove any protected test paths separately with hooks OFF. A console exit alone
 does not remove hooks. See [shutdown](../../features/diagnostics/README.md).
 
-## Source of truth
+## Implementation
 
 - [Export metadata](../../../hypervisor/src/syscall.c)
 - [Field labels](../../../shared/telemetry_fields.h)
