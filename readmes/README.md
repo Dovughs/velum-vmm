@@ -6,15 +6,14 @@ Use these guides to configure entry observation, build focused log views, apply
 request policies and run CPUID/TSC experiments. Each target guide includes its
 input schema and a controlled workload.
 
-Guides describe the current implementation. Export availability is checked at
-runtime; an entry in this index does not guarantee a selectable target on every
-Windows build. Target IDs are protocol identities, not syscall service numbers.
-The examples below are procedures to run, not fabricated execution transcripts.
+Each guide lists the available fields, menu steps and policy behavior. The console
+checks exports at runtime and presents one target per unique entry address.
+Target IDs identify the shared protocol; Windows syscall service numbers are separate.
 
 ## Technical article
 
 [Velum: preserving Windows execution across VMX transitions](technical-writeup/README.md)
-explains the architecture, source-level transitions, debugger evidence and validation limits.
+explains the architecture, source-level transitions, debugging sessions and runtime results.
 
 ## Start here
 
@@ -40,26 +39,25 @@ explains the architecture, source-level transitions, debugger evidence and valid
 
 | Target | Scoped deny | Access reduction |
 | --- | --- | --- |
-| [NtCreateFile](syscalls/NtCreateFile/README.md) | Yes, if available and capture eligible | Yes |
-| [NtAllocateVirtualMemory](syscalls/NtAllocateVirtualMemory/README.md) | Yes, if available and capture eligible | No |
-| [NtOpenFile](syscalls/NtOpenFile/README.md) | Yes, if available and capture eligible | Yes |
-| [NtDeleteFile](syscalls/NtDeleteFile/README.md) | Yes, if available and capture eligible | No |
-| [NtSetInformationFile](syscalls/NtSetInformationFile/README.md) | Yes, if available and capture eligible | No |
-| [NtWriteFile](syscalls/NtWriteFile/README.md) | Yes, if available and capture eligible | No |
-| [NtCreateSection](syscalls/NtCreateSection/README.md) | Yes, if available and capture eligible | Yes |
-| [NtMapViewOfSection](syscalls/NtMapViewOfSection/README.md) | Yes, if available and capture eligible | No |
-| [NtOpenProcess](syscalls/NtOpenProcess/README.md) | Yes, if available and capture eligible | Yes |
-| [NtProtectVirtualMemory](syscalls/NtProtectVirtualMemory/README.md) | Yes, if available and capture eligible | No |
-| [NtReadFile](syscalls/NtReadFile/README.md) | Yes, if available and capture eligible | No |
-| [NtDuplicateObject](syscalls/NtDuplicateObject/README.md) | Yes, if available and capture eligible | Yes |
+| [NtCreateFile](syscalls/NtCreateFile/README.md) | Yes | Yes |
+| [NtAllocateVirtualMemory](syscalls/NtAllocateVirtualMemory/README.md) | Yes | No |
+| [NtOpenFile](syscalls/NtOpenFile/README.md) | Yes | Yes |
+| [NtDeleteFile](syscalls/NtDeleteFile/README.md) | Yes | No |
+| [NtSetInformationFile](syscalls/NtSetInformationFile/README.md) | Yes | No |
+| [NtWriteFile](syscalls/NtWriteFile/README.md) | Yes | No |
+| [NtCreateSection](syscalls/NtCreateSection/README.md) | Yes | Yes |
+| [NtMapViewOfSection](syscalls/NtMapViewOfSection/README.md) | Yes | No |
+| [NtOpenProcess](syscalls/NtOpenProcess/README.md) | Yes | Yes |
+| [NtProtectVirtualMemory](syscalls/NtProtectVirtualMemory/README.md) | Yes | No |
+| [NtReadFile](syscalls/NtReadFile/README.md) | Yes | No |
+| [NtDuplicateObject](syscalls/NtDuplicateObject/README.md) | Yes | Yes |
 
-NtProtectVirtualMemory was unavailable on the inspected host. NtWriteVirtualMemory
-and NtCreateThreadEx are retired protocol slots, not supported features;
-NtReadVirtualMemory and process creation are not implemented.
+The table describes policies for available targets with eligible captured inputs.
+NtProtectVirtualMemory availability depends on the running kernel's exports.
 
 ## Kernel routine guides
 
-All are observation-only; no deny or argument-modification policy.
+These targets provide kernel-entry telemetry, numeric filters and module/tag summaries.
 
 - [ExAllocatePool2](kernel-routines/ExAllocatePool2/README.md)
 - [ExAllocatePoolWithTag](kernel-routines/ExAllocatePoolWithTag/README.md)
