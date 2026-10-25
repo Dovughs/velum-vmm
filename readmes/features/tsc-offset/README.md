@@ -1,9 +1,9 @@
-# Experimental fixed TSC offset
+# Fixed TSC offset
 
 [Documentation index](../../README.md) | [Project](../../../README.md)
 
 
-## Menu and reversible smoke test
+## Configuration walkthrough
 
 Dashboard **[5] TSC offset** opens a draft:
 
@@ -15,10 +15,10 @@ Dashboard **[5] TSC offset** opens a draft:
 
 Back discards unapplied edits. Toggling OFF and applying makes the effective
 offset zero but retains the configured number. Reset also clears that number.
-TSC Apply/Reset does not modify CPUID rules. A successful UI round trip is not
-an independent measurement of the hardware clock transform.
+TSC Apply/Reset leaves CPUID rules unchanged. The walkthrough verifies that the
+configuration is applied, retained and reset.
 
-## Units, behavior and limits
+## Units and clock behavior
 
 Values are signed decimal or hexadecimal, in **TSC ticks**, not milliseconds.
 Range: -1,000,000,000..+1,000,000,000. Defaults are OFF and zero. Applied values
@@ -40,13 +40,12 @@ values need separate translation. Zero disarms; expired/overflowing translations
 saturate. An armed deadline is rebased on changes and shutdown. Apply is serialized
 across CPUs; an unrecoverable rollback stops instead of resuming inconsistent state.
 
-## Validation limits
+## Clock transitions
 
 A live offset change introduces a clock discontinuity. Deadline translation
 does not guarantee QPC monotonicity or synchronization with other time sources.
 Use small values in a disposable VM and check idle/timer-heavy activity, positive
-and negative offsets, OFF, reconnect and shutdown. Do not present a configuration
-screenshot as evidence of better timing or benchmark performance.
+and negative offsets, OFF, reconnect and shutdown.
 
 Implementation: [TSC state](../../../hypervisor/src/tsc.c),
 [configuration](../../../shared/processor_config.h),
@@ -55,11 +54,11 @@ Hardware reference: [Intel SDM](https://www.intel.com/content/www/us/en/develope
 
 ## Recorded example
 
-These captures are from the physical Windows 11 session, not a VMware guest.
+These captures show the physical Windows 11 test session.
 See the [session manifest](../../../assets/capture-manifest.md) for environment and reproduction details.
 
 ### TSC offset configuration
 
-A labeled three-state composite: draft ON/100 ticks, applied ON/100, then reset OFF/0. It demonstrates configuration, not reduced latency.
+A three-state configuration sequence: draft ON/100 ticks, applied ON/100, then reset OFF/0.
 
 ![TSC offset configuration](../../../assets/screenshots/07-tsc-configuration.png)
