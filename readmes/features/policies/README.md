@@ -84,12 +84,12 @@ Implementation: [policy validation](../../../shared/telemetry_policy.h),
 
 ## Recorded example
 
-These captures are from the physical Windows 11 session, not a VMware guest.
+These captures show the physical Windows 11 test session.
 See the [session manifest](../../../assets/capture-manifest.md) for environment and reproduction details.
 
 ### Scoped deny: OFF / DENY / OFF
 
-The same caller and file handle succeed, fail with Win32 error 5 while contents remain unchanged, then succeed after disabling the policy. A chronological screenshot sequence with reading pauses, not continuous video.
+The same caller and file handle succeed, fail with Win32 error 5 while contents remain unchanged, then succeed after disabling the policy. A chronological screenshot sequence with reading pauses.
 
 ![Scoped deny: OFF / DENY / OFF](../../../assets/demos/03-scoped-deny.gif)
 
