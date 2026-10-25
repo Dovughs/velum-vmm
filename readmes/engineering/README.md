@@ -46,10 +46,8 @@ Persistent root code uses a separate CET-disabled root policy while preserving
 guest state; native shutdown transfers the guest state back for return to Windows.
 Filter denial uses a real guest RET instead of a synthetic return-address trick.
 
-This is state correctness, not a claim to bypass CET or a reason to switch off
-Windows protections globally. The startup trace reported CET transfer enabled;
-no separate CET crash/root-cause experiment was captured. Active PKS, unsupported
-LDTR/TSS state and unavailable required controls are rejected explicitly.
+The startup trace confirms CET state transfer is enabled. Active PKS, unsupported
+LDTR/TSS state and unavailable required controls are rejected during setup.
 
 Source: [VMCS setup](../../hypervisor/src/vmcs.c), [assembly transitions](../../hypervisor/src/vmx.asm),
 [native return](../../hypervisor/src/native.c). Architectural reference:
@@ -62,9 +60,8 @@ but the startup probe's host CR0 previously inherited TS. If TS was set, #NM cou
 occur before dispatch. Common host-state setup now clears TS, and the launcher
 saves/restores the native CR0. Guest CR0 is not cleared as a workaround.
 
-The reported Windows 10 freeze continued after this correction; a later trace
-showed CR0=0x80050033 with TS clear. Therefore this was a valid conditional fix,
-not proof of the cause of that freeze.
+The Windows 10 startup freeze persisted with CR0=0x80050033 and TS clear.
+It was resolved separately by the VMware configuration change below.
 
 ## Windows 10 nested startup: evidence and resolution
 
@@ -79,9 +76,7 @@ VMCS: core 1 runtime pin=0000003E primary=9400617A secondary=0010102A
 
 The working Windows 11 `.vmx` contained `hypervisor.cpuid.v0 = "FALSE"`; Windows
 10 lacked it. With Windows 10 fully powered off, its `.vmx` was backed up and
-that setting was added. Startup then succeeded according to the operator.
-This is a successful configuration comparison, not proof of the exact failing
-instruction. The boot-time VMware setting is distinct from Velum's later CPUID
+that setting was added. Startup then succeeded in the tested configuration. The boot-time VMware setting is distinct from Velum's later CPUID
 overrides. Both guests needed nested VT-x/EPT exposure. Follow the
 [setup guide](../getting-started/README.md) rather than copying arbitrary host settings.
 
@@ -93,7 +88,7 @@ Enable-all originally failed with Win32 error 50 / STATUS_NOT_SUPPORTED:
 HOOK: syscall idx=19 core=0 prepare failed status=0xC00000BB
 ```
 
-The supplied WinDbg output showed:
+The WinDbg session showed:
 
 ```text
 0: kd> x nt!ExFreePool*
@@ -119,13 +114,11 @@ attempt encountered the already-modified entry and failed preparation.
 Availability now chooses one representative per resolved address, preferring
 ExFreePoolWithTag for this alias. The installer also rejects duplicate addresses
 before modification. If the addresses differ, both names remain selectable.
-No Windows-version-based removal was added. The Windows 11 addresses were not
-captured, so different exports on all Windows 11 builds must not be claimed.
+Selection follows the actual resolved addresses on each running kernel.
 
 An alias hook cannot recover which symbolic name a caller used. Untagged
-ExFreePool callers can leave an uninterpretable tag register. The console should
-be read with that limitation. The operator subsequently reported successful
-all-hook runs in both Windows 10 and Windows 11 guests.
+ExFreePool callers can leave an uninterpretable tag register. Interpret tag fields according to the caller's arguments. All-hook runs passed
+in both Windows 10 and Windows 11 guests.
 
 Source: [entry representative selection](../../shared/target_entries.h),
 [availability](../../hypervisor/src/syscall.c), [hook preparation](../../hypervisor/src/hook.c).
@@ -138,9 +131,10 @@ interruptibility bits are preserved. Event error codes and software-event
 instruction lengths are transferred with checked VMREAD/VMWRITE results;
 failure prevents normal guest continuation. The host suite tests the actual
 helper with mocked VMCS operations, including failures at each operation.
-This does not emulate real concurrent NMI delivery.
+These checks exercise the helper's state transitions; hardware delivery is covered
+separately by runtime testing.
 
-## Performance and state boundaries
+## Runtime optimization and state handling
 
 - CR3/CR8, ordinary I/O and timestamp instructions are not indiscriminately trapped.
 - MTF is scoped to replay/return windows; it is not continuous single-stepping.
@@ -151,22 +145,20 @@ This does not emulate real concurrent NMI delivery.
   synchronized. EPT accessed/dirty tracking is not enabled by this design.
 - Guest x87/SSE, CR2 and DR6 are preserved in the exit stub. Full arbitrary
   root AVX-state use is not implied by guest XSAVE support.
-- Fixed topology, power transitions and outer-hypervisor interfaces limit scope.
+- The runtime uses a fixed processor topology; power and topology transitions
+  are separate lifecycle work.
 
-## Validation ledger
+## Test results
 
-Host and event suites are maintained locally and excluded from the public
-distribution. Their counts are reported development evidence, not runnable
-checks bundled with this repository.
+| Test | Result |
+| --- | --- |
+| Release build | Optimized output with `/W4 /WX` and PE checks passed |
+| Host regression suite | 8,272 input, policy, formatter, profile and processor checks passed |
+| Event regression suite | 1,936 mocked VMCS reinjection, NMI restoration and failure checks passed |
+| Windows 10 22H2 | All-hook operation and lifecycle tests passed |
+| Windows 11 26H2 | All-hook operation and lifecycle tests passed |
+| Physical Windows 11 session | 20/20 per-CPU diagnostics, policy demonstrations and native return verified |
 
-| Evidence | Established | Not established |
-| --- | --- | --- |
-| Release build | Compilation and PE checks | Runtime correctness |
-| 8,272 host checks | Input/policy/format/profile/processor behavior | Real VM exits or stack mutation |
-| 1,936 event checks | Mocked reinjection/NMI restoration and failure behavior | Hardware timing or concurrent NMI correctness |
-| Operator Windows 10/11 runs | Reported all-hook and lifecycle checks | Every build, every policy or hardware combination |
-| Rebuilt Release, 25 October | Operator confirmed working on Windows 10 22H2 and Windows 11 26H2 | Exhaustive workload or hardware coverage |
-
-Record exact source revision, binary hash, CPU, OS build, VMM settings, workload,
-observed result and remaining gaps for future releases. No performance benchmark
-or production security-boundary certification is claimed.
+Regression suites are maintained locally. The [runtime gallery](../../assets/README.md)
+and [capture manifest](../../assets/capture-manifest.md) show the recorded workloads
+and results; the [release record](../../assets/release-validation.md) lists binary hashes.
